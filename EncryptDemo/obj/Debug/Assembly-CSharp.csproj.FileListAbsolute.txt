@@ -278,3 +278,5 @@ E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp.
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp.csproj.CopyComplete
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp.dll
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp.pdb
+E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\Temp\bin\Debug\Assembly-CSharp.dll.config
+E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\Temp\bin\Debug\BouncyCastle.Crypto.dll

@@ -1,5 +1,5 @@
 sceneSetups:
-- path: Assets/Scenes/Bob.unity
+- path: Assets/Scenes/Alice.unity
   isLoaded: 1
   isActive: 1
   isSubScene: 0
