@@ -8,6 +8,9 @@ from Crypto import Random
 from Crypto.Util.py3compat import *
 
 from math import log
+
+CHUNK_SIZE = 128
+
 def bytes_needed(n):
 	if n == 0:
 		return 1
@@ -66,12 +69,12 @@ RSA_key_data['e'] = list(RSA_key_pair.e.to_bytes(bytes_needed(RSA_key_pair.e), '
 
 RSA_cipher = PKCS1_OAEP.new(RSA_key_pair)
 
-RSA_large_pair = RSA.generate(8192)
-RSA_large_key_data = {}
-RSA_large_key_data['n'] = list(RSA_large_pair.n.to_bytes(bytes_needed(RSA_large_pair.n), 'big'))
-RSA_large_key_data['e'] = list(RSA_large_pair.e.to_bytes(bytes_needed(RSA_large_pair.e), 'big'))
+#RSA_large_pair = RSA.generate(8192)
+#RSA_large_key_data = {}
+#RSA_large_key_data['n'] = list(RSA_large_pair.n.to_bytes(bytes_needed(RSA_large_pair.n), 'big'))
+#RSA_large_key_data['e'] = list(RSA_large_pair.e.to_bytes(bytes_needed(RSA_large_pair.e), 'big'))
 
-RSA_large_cipher = PKCS1_OAEP.new(RSA_large_pair)
+#RSA_large_cipher = PKCS1_OAEP.new(RSA_large_pair)
 
 #message = b64encode(b'Test message')
 #cipher = PKCS1_OAEP.new(RSA_key_pair)
@@ -125,6 +128,15 @@ private_keys = {
 	'RSA': {'key': list(b'na'), 'iv': list(b'na')}
 }
 
+def chunk_string(plaintext, chunk_size):
+	return [plaintext[i:i+chunk_size] for i in range(0, len(plaintext), chunk_size)]
+
+def unchunk(chunks):
+	unchunked = ""
+	for chunk in chunks:
+		unchunked = unchunked + chunk
+	return unchunked
+
 def encrypt(plaintext, playerNum):
 	method = players[playerNum]['method']
 
@@ -137,13 +149,13 @@ def encrypt(plaintext, playerNum):
 	elif method == "Blowfish":
 		return plaintext
 	elif method == "RSA":
-		print(len(plaintext))
-		return list(players[playerNum]['RSA'].encrypt(plaintext))
+		return RSA_encrypt(plaintext, players[playerNum]['RSA'])
 	else:
 		return plaintext
 
 def decrypt(ciphertext, playerNum):
 	method = players[playerNum]['method']
+
 	if method == "AES":
 		return ciphertext
 	elif method == "DES":
@@ -153,31 +165,36 @@ def decrypt(ciphertext, playerNum):
 	elif method == "Blowfish":
 		return ciphertext
 	elif method == "RSA":
-		return RSA_cipher.decrypt(ciphertext).decode('utf-8')
+		return RSA_decrypt(ciphertext)
 	else:
 		return ciphertext
 
-def chunk(plaintext, chunk_size):
-	return [plaintext[i:i+chunk_size] for i in range(0, len(plaintext), chunk_size)]
+def RSA_encrypt(plaintext, cipher):
+	chunked = chunk_string(plaintext, CHUNK_SIZE)
+	ciphertext_blocks = []
 
-def unchunk(chunks):
-	unchunked = ""
-	for chunk in chunks:
-		unchunked = unchunked + chunk
-	return unchunked
+	for chunk in chunked:
+		block = {'data': list(cipher.encrypt(bytes(chunk, 'utf-8')))}
+		ciphertext_blocks.append(block)
+
+	return {'datas':ciphertext_blocks}
+
+def RSA_decrypt(ciphertext_blocks):
+	chunked = []
+
+	for block in ciphertext_blocks['datas']:
+		chunked.append(RSA_cipher.decrypt(bytes(block['data'])).decode('utf-8'))
+
+	return unchunk(chunked)
 
 @app.route('/publicKey')
 def get_public_key():
 	return json.dumps(RSA_key_data)
 
-@app.route('/largePublicKey')
-def get_large_public_key():
-	return json.dumps(RSA_large_key_data)
-
 @app.route('/privateKeys', methods=['POST'])
 def get_private_keys():
-	data = bytes(json.loads(request.form['data'])['data'])
-	clientData = json.loads(RSA_large_cipher.decrypt(data).decode('utf-8'))
+	data = RSA_decrypt(json.loads(request.form['data']))
+	clientData = json.loads(data)
 
 	playerNum = clientData['playerNum']
 	playerMethod = clientData['method']
@@ -203,9 +220,9 @@ def get_private_keys():
 
 	players[playerNum] = player_dict
 
-	encrypted_message =  players[playerNum]['RSA'].encrypt(bytes(json.dumps(private_keys[playerMethod]), 'utf-8'))
+	encrypted_message = RSA_encrypt(json.dumps(private_keys[playerMethod]), players[playerNum]['RSA'])
 
-	return json.dumps({'data': list(encrypted_message)})
+	return json.dumps(encrypted_message)
 
 @app.route('/attemptStart', methods=['POST'])
 def establish_connection():
@@ -218,14 +235,8 @@ def establish_connection():
 @app.route('/com', methods=['POST'])
 def main_communicate():
 	player_number = json.loads(request.form['data'])['playerNum']
-	data = json.loads(
-		decrypt(
-			bytes(
-				json.loads(request.form['data'])['data']
-			),
-			player_number
-		)
-		)['data']
+
+	data = json.loads(decrypt(json.loads(request.form['data']), player_number))['data']
 
 	for entry in data:
 		if entry['name'] in valid_moves[player_number]:
@@ -233,17 +244,7 @@ def main_communicate():
 		else:
 			print("Attempted cheat")
 
-	return json.dumps({ 
-			'data': encrypt(
-				bytes(
-					json.dumps(
-						{'data': list(game_data.values())}
-					),
-					'utf-8'
-				),
-				player_number
-			)
-		})
+	return encrypt(json.dumps(game_data), player_number)
 
 @app.route('/testEncryption', methods=['POST'])
 def test_encryption():

@@ -9,6 +9,8 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System.Security.Cryptography;
 
+using Newtonsoft.Json;
+
 public class NetworkManager : MonoBehaviour {
     public string encryptionMethod = "RSA";
     public GameObject[] parents;
@@ -23,7 +25,6 @@ public class NetworkManager : MonoBehaviour {
 
     RSACryptoServiceProvider clientRSA; //Decrypts based on client private key
     RSACryptoServiceProvider serverRSA; //Encrypts based on server public key
-    RSACryptoServiceProvider serverBigRSA;
     RSAKeySet clientPublicKeys;
     PrivateKey privateKeys;
 
@@ -88,16 +89,6 @@ public class NetworkManager : MonoBehaviour {
             }
         }
 
-        //Large public key (for bigger, more secure stuff)
-        using (UnityWebRequest webRequest = UnityWebRequest.Get(getBigPublicKeyURL)) {
-            yield return webRequest.SendWebRequest();
-            if (webRequest.isNetworkError) {
-                Debug.Log("Connection failed");
-            } else {
-                serverBigRSA = ImportPublicKey(JsonUtility.FromJson<RSAKeySet>(webRequest.downloadHandler.text));
-            }
-        }
-
         //Encrypt my public keys and send them to server
         WWWForm form1 = new WWWForm();
         Handshake d = new Handshake();
@@ -107,10 +98,7 @@ public class NetworkManager : MonoBehaviour {
         d.method = encryptionMethod;
 
         string handshakeJson = JsonUtility.ToJson(d);
-        byte[] encryptedHandshake = serverBigRSA.Encrypt(Encoding.UTF8.GetBytes(handshakeJson), true);
-
-        EncryptedData e = new EncryptedData();
-        e.data = encryptedHandshake;
+        ChunkedEncryptedData e = RSAEncrypt(handshakeJson, serverRSA);
 
         form1.AddField("data", JsonUtility.ToJson(e));
 
@@ -119,7 +107,7 @@ public class NetworkManager : MonoBehaviour {
             if (webRequest.isNetworkError) {
                 Debug.Log("Connection failed");
             } else {
-                string decryptedString = Encoding.UTF8.GetString(clientRSA.Decrypt(JsonUtility.FromJson<EncryptedData>(webRequest.downloadHandler.text).data, true));
+                string decryptedString = RSADecrypt(JsonUtility.FromJson<ChunkedEncryptedData>(webRequest.downloadHandler.text), clientRSA);
                 Debug.Log(decryptedString);
                 privateKeys = JsonUtility.FromJson<PrivateKey>(decryptedString);
             }
@@ -155,51 +143,56 @@ public class NetworkManager : MonoBehaviour {
     ToSendData Encrypt(string plaintext) {
         ToSendData toSend = new ToSendData();
         toSend.playerNum = playerNum;
+        toSend.datas = new List<EncryptedData>();
+ 
+        EncryptedData d = new EncryptedData();
+        d.data = Encoding.UTF8.GetBytes(plaintext);
+
         switch (encryptionMethod) {
             case "RSA":
-                toSend.data = serverRSA.Encrypt(Encoding.UTF8.GetBytes(plaintext), true);
+                toSend.datas = RSAEncrypt(plaintext, serverRSA).datas;
                 break;
             case "AES":
-                toSend.data = Encoding.UTF8.GetBytes(plaintext);
+                toSend.datas.Add(d);
                 break;
             case "DES":
-                toSend.data = Encoding.UTF8.GetBytes(plaintext);
+                toSend.datas.Add(d);
                 break;
             case "DES3":
-                toSend.data = Encoding.UTF8.GetBytes(plaintext);
+                toSend.datas.Add(d);
                 break;
             case "Blowfish":
-                toSend.data = Encoding.UTF8.GetBytes(plaintext);
+                toSend.datas.Add(d);
                 break;
             default:
-                toSend.data = Encoding.UTF8.GetBytes(plaintext);
+                toSend.datas.Add(d);
                 break;
         }
         return toSend;
     }
 
-    string Decrypt(byte[] ciphertext) {
+    string Decrypt(ChunkedEncryptedData ciphertext) {
         switch (encryptionMethod) {
             case "RSA":
-                return Encoding.UTF8.GetString(clientRSA.Decrypt(ciphertext, true));
+                return RSADecrypt(ciphertext, clientRSA);
                 break;
             case "AES":
-                return Encoding.UTF8.GetString(ciphertext);
+                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             case "DES":
-                return Encoding.UTF8.GetString(ciphertext);
+                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             case "DES3":
-                return Encoding.UTF8.GetString(ciphertext);
+                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             case "Blowfish":
-                return Encoding.UTF8.GetString(ciphertext);
+                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             default:
-                return Encoding.UTF8.GetString(ciphertext);
+                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
         }
-        return Encoding.UTF8.GetString(ciphertext);
+        return Encoding.UTF8.GetString(ciphertext.datas[0].data);
     }
 
     string[] Chunk(string plaintext, int chunkSize) {
@@ -209,7 +202,7 @@ public class NetworkManager : MonoBehaviour {
             chunks[i] = temp.Substring(0, chunkSize);
             temp = temp.Substring(chunkSize);
         }
-        chunks[chunks.Length] = temp;
+        chunks[chunks.Length-1] = temp;
         return chunks;
     }
 
@@ -221,15 +214,28 @@ public class NetworkManager : MonoBehaviour {
         return unchunked;
     }
 
-    byte[][] RSAEncrypt(string plaintext, RSACryptoServiceProvider rsa) {
+    ChunkedEncryptedData RSAEncrypt(string plaintext, RSACryptoServiceProvider rsa) {
         string[] chunked = Chunk(plaintext, RSAChunkSize);
-        byte[][] encrypted = new byte[chunked.Length][];
+        ChunkedEncryptedData c = new ChunkedEncryptedData();
+        c.datas = new List<EncryptedData>();
 
         for (int i = 0; i < chunked.Length; i++) {
-
+            EncryptedData d = new EncryptedData();
+            d.data = rsa.Encrypt(Encoding.UTF8.GetBytes(chunked[i]), true);
+            c.datas.Add(d);
         }
 
-        return null;
+        return c;
+    }
+
+    string RSADecrypt(ChunkedEncryptedData chunkedData, RSACryptoServiceProvider rsa) {
+        string[] chunked = new string[chunkedData.datas.Count];
+
+        for (int i = 0; i < chunked.Length; i++) {
+            chunked[i] = Encoding.UTF8.GetString(rsa.Decrypt(chunkedData.datas[i].data, true));
+        }
+
+        return UnChunk(chunked);
     }
 
     IEnumerator Exchange() {
@@ -249,8 +255,8 @@ public class NetworkManager : MonoBehaviour {
             if (webRequest.isNetworkError) {
                 Debug.Log("Connection failed");
             } else {
-                EncryptedData d = JsonUtility.FromJson<EncryptedData>(webRequest.downloadHandler.text);
-                ObjectInfoSet received = JsonUtility.FromJson<ObjectInfoSet>(Decrypt(d.data));
+                ChunkedEncryptedData d = JsonUtility.FromJson<ChunkedEncryptedData>(webRequest.downloadHandler.text);
+                ObjectInfoSet received = JsonUtility.FromJson<ObjectInfoSet>(Decrypt(d));
                 foreach (ObjectInfo o in received.data) {
                     foreach (GameObject g in children) {
                         if (g.name == o.name) {
@@ -293,12 +299,17 @@ public class NetworkManager : MonoBehaviour {
         public byte[] u;
     }
 
+    [System.Serializable]
     private class EncryptedData {
         public byte[] data;
     }
 
+    private class ChunkedEncryptedData {
+        public List<EncryptedData> datas;
+    }
+
     private class ToSendData {
-        public byte[] data;
+        public List<EncryptedData> datas;
         public int playerNum;
     }
 
