@@ -1,6 +1,6 @@
 # UnityEncryptedNetwork
 
-## This repsitory is:
+## This repository is:
 - A demonstration of a simple networked Unity game running with a Flask server
 - A demonstration of encrypting multiplayer network traffic in Unity + Flask
 
