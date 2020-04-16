@@ -4,7 +4,8 @@ from base64 import b64encode
 # PyCrypto package
 from Crypto.Cipher import AES, DES, DES3, Blowfish, PKCS1_OAEP
 from Crypto.PublicKey import RSA
-#from Crypto.Util.Padding import pad, unpad
+from Crypto import Random
+from Crypto.Util.py3compat import *
 
 from math import log
 def bytes_needed(n):
@@ -17,11 +18,45 @@ app = Flask(__name__)
 game_started = False
 clients = []
 game_data = {}
+players = {}
+valid_moves = {1:['Player'], 2:['CPU']}
 
-public_key = "AAAAAAA"
+# Pad and unpad function taken from PyCrypto repository. For some reason they aren't included in the released package
+def pad(data_to_pad, block_size, style='pkcs7'):
+	padding_len = block_size-len(data_to_pad)%block_size
+	if style == 'pkcs7':
+		padding = bchr(padding_len)*padding_len
+	elif style == 'x923':
+		padding = bchr(0)*(padding_len-1) + bchr(padding_len)
+	elif style == 'iso7816':
+		padding = bchr(128) + bchr(0)*(padding_len-1)
+	else:
+		raise ValueError("Unknown padding style")
+	return data_to_pad + padding
 
-#Possible methods: None, AES, DES, DES3, Blowfish, RSA, DSA
-method = "None"
+def unpad(padded_data, block_size, style='pkcs7'):
+	pdata_len = len(padded_data)
+	if pdata_len % block_size:
+		raise ValueError("Input data is not padded")
+	if style in ('pkcs7', 'x923'):
+		padding_len = bord(padded_data[-1])
+		if padding_len<1 or padding_len>min(block_size, pdata_len):
+			raise ValueError("Padding is incorrect.")
+		if style == 'pkcs7':
+			if padded_data[-padding_len:]!=bchr(padding_len)*padding_len:
+				raise ValueError("PKCS#7 padding is incorrect.")
+		else:
+			if padded_data[-padding_len:-1]!=bchr(0)*(padding_len-1):
+				raise ValueError("ANSI X.923 padding is incorrect.")
+	elif style == 'iso7816':
+		padding_len = pdata_len - padded_data.rfind(bchr(128))
+		if padding_len<1 or padding_len>min(block_size, pdata_len):
+			raise ValueError("Padding is incorrect.")
+		if padding_len>1 and padded_data[1-padding_len:]!=bchr(0)*(padding_len-1):
+			raise ValueError("ISO 7816-4 padding is incorrect.")
+	else:
+		raise ValueError("Unknown padding style")
+	return padded_data[:-padding_len]
 
 # Generate RSA key-pair
 RSA_key_pair = RSA.generate(2048)
@@ -29,16 +64,18 @@ RSA_key_data = {}
 RSA_key_data['n'] = list(RSA_key_pair.n.to_bytes(bytes_needed(RSA_key_pair.n), 'big'))
 RSA_key_data['e'] = list(RSA_key_pair.e.to_bytes(bytes_needed(RSA_key_pair.e), 'big'))
 
-RSA_key_data['d'] = list(RSA_key_pair.d.to_bytes(bytes_needed(RSA_key_pair.d), 'big'))
-RSA_key_data['p'] = list(RSA_key_pair.p.to_bytes(bytes_needed(RSA_key_pair.p), 'big'))
-RSA_key_data['q'] = list(RSA_key_pair.q.to_bytes(bytes_needed(RSA_key_pair.q), 'big'))
-RSA_key_data['u'] = list(RSA_key_pair.u.to_bytes(bytes_needed(RSA_key_pair.u), 'big'))
+RSA_cipher = PKCS1_OAEP.new(RSA_key_pair)
 
-RSA_decrypter = PKCS1_OAEP.new(RSA_key_pair)
+RSA_large_pair = RSA.generate(8192)
+RSA_large_key_data = {}
+RSA_large_key_data['n'] = list(RSA_large_pair.n.to_bytes(bytes_needed(RSA_large_pair.n), 'big'))
+RSA_large_key_data['e'] = list(RSA_large_pair.e.to_bytes(bytes_needed(RSA_large_pair.e), 'big'))
 
-message = b64encode(b'Test message')
+RSA_large_cipher = PKCS1_OAEP.new(RSA_large_pair)
+
+#message = b64encode(b'Test message')
 #cipher = PKCS1_OAEP.new(RSA_key_pair)
-ciphertext = RSA_decrypter.encrypt(message)
+#ciphertext = RSA_decrypter.encrypt(message)
 #print(ciphertext)
 #plain = cipher.decrypt(ciphertext)
 
@@ -46,21 +83,53 @@ ciphertext = RSA_decrypter.encrypt(message)
 #print(ciphertext)
 #print(plain)
 
-#key_AES = b'AAAAAAAAAAAAAAAA'
-#aes_cipher = AES.new(key_AES, AES.MODE_CBC) #automatically generates iv
-#aes_iv = b64encode(aes_cipher.iv).decode('utf-8')
+key_AES = b'AAAAAAAAAAAAAAAA'
+iv_aes = Random.new().read(16)
+#aes_cipher = AES.new(key_AES, AES.MODE_CBC, iv_aes)
+#msg = cipher.encrypt(pad(b'Attack at dawn', 16))
+#cipher2 = AES.new(key_AES, AES.MODE_CBC, iv_aes)
+#print(unpad(cipher2.decrypt(msg), 16).decode('utf-8'))
 
-def gege_encrypt(plaintext):
-	pass
+key_DES = b'AAAAAAAA'
+iv_des = Random.new().read(DES.block_size)
+#des_cipher = DES.new(key_DES, DES.MODE_CBC, iv_des)
+#plaintext = pad(b'sona si latine loqueris', 16)
+#msg = des_cipher.encrypt(plaintext)
+#cipher2 = DES.new(key_DES, DES.MODE_CBC, iv_des)
+#print(unpad(cipher2.decrypt(msg),16))
 
-def gege_decrypt(ciphertext):
-	pass
+key_DES3 = b'AAAAAAAAAAAAAAAA'
+iv_des3 = Random.new().read(DES3.block_size)
+#des3_cipher = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+#plaintext = pad(b'sona si latine loqueris', 16)
+#msg = des3_cipher.encrypt(plaintext)
+#cipher2 = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+#print(unpad(cipher2.decrypt(msg),16))
 
-def encrypt(plaintext):
+key_blowfish = b'An arbitrarily long key'
+iv_blowfish = Random.new().read(Blowfish.block_size)
+#blowfish_cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv)
+#plaintext = b'docendo discimus '
+#msg = cipher.encrypt(pad(plaintext, 8))
+#cipher2 = Blowfish.new(key, Blowfish.MODE_CBC, iv)
+#plain = unpad(cipher2.decrypt(msg), 8)
+#print(plain)
+
+
+private_keys = {
+	'AES': {'key': list(key_AES), 'iv': list(iv_aes)},
+	'DES': {'key': list(key_DES), 'iv': list(iv_des)},
+	'DES3': {'key': list(key_DES3), 'iv': list(iv_des3)},
+	'Blowfish': {'key': list(key_blowfish), 'iv': list(iv_blowfish)},
+	'None': {'key': list(b'na'), 'iv': list(b'na')},
+	'RSA': {'key': list(b'na'), 'iv': list(b'na')}
+}
+
+def encrypt(plaintext, playerNum):
+	method = players[playerNum]['method']
+
 	if method == "AES":
-		ct_bytes = aes_cipher.encrypt(pad(plaintext, AES.block_size))
-		ct = b64encode(ct_bytes).decode('utf-8')
-		return ct
+		return plaintext
 	elif method == "DES":
 		return plaintext
 	elif method == "DES3":
@@ -68,11 +137,13 @@ def encrypt(plaintext):
 	elif method == "Blowfish":
 		return plaintext
 	elif method == "RSA":
-		return RSA.encrypt(plaintext)
+		print(len(plaintext))
+		return list(players[playerNum]['RSA'].encrypt(plaintext))
 	else:
 		return plaintext
 
-def decrypt(ciphertext):
+def decrypt(ciphertext, playerNum):
+	method = players[playerNum]['method']
 	if method == "AES":
 		return ciphertext
 	elif method == "DES":
@@ -82,17 +153,59 @@ def decrypt(ciphertext):
 	elif method == "Blowfish":
 		return ciphertext
 	elif method == "RSA":
-		return ciphertext
+		return RSA_cipher.decrypt(ciphertext).decode('utf-8')
 	else:
 		return ciphertext
+
+def chunk(plaintext, chunk_size):
+	return [plaintext[i:i+chunk_size] for i in range(0, len(plaintext), chunk_size)]
+
+def unchunk(chunks):
+	unchunked = ""
+	for chunk in chunks:
+		unchunked = unchunked + chunk
+	return unchunked
 
 @app.route('/publicKey')
 def get_public_key():
 	return json.dumps(RSA_key_data)
 
+@app.route('/largePublicKey')
+def get_large_public_key():
+	return json.dumps(RSA_large_key_data)
+
 @app.route('/privateKeys', methods=['POST'])
 def get_private_keys():
-	pass
+	data = bytes(json.loads(request.form['data'])['data'])
+	clientData = json.loads(RSA_large_cipher.decrypt(data).decode('utf-8'))
+
+	playerNum = clientData['playerNum']
+	playerMethod = clientData['method']
+	playerE = int.from_bytes(clientData['e'], byteorder='big', signed=False)
+	playerN = int.from_bytes(clientData['n'], byteorder='big', signed=False)
+
+	player_dict = {}
+	player_dict['method'] = playerMethod
+	player_dict['RSA'] = PKCS1_OAEP.new(RSA.construct((playerN, playerE)))
+
+	if playerMethod == 'AES':
+		player['out_cipher'] = AES.new(key_AES, AES.MODE_CBC, iv_aes)
+		player['in_cipher'] = AES.new(key_AES, AES.MODE_CBC, iv_aes)
+	elif playerMethod == 'DES':
+		player['out_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
+		player['in_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
+	elif playerMethod == 'DES3':
+		player['out_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+		player['in_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+	elif playerMethod == 'Blowfish':
+		player['out_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
+		player['in_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
+
+	players[playerNum] = player_dict
+
+	encrypted_message =  players[playerNum]['RSA'].encrypt(bytes(json.dumps(private_keys[playerMethod]), 'utf-8'))
+
+	return json.dumps({'data': list(encrypted_message)})
 
 @app.route('/attemptStart', methods=['POST'])
 def establish_connection():
@@ -104,18 +217,42 @@ def establish_connection():
 
 @app.route('/com', methods=['POST'])
 def main_communicate():
-	data = json.loads(decrypt(request.form['data']))['data']
-	if authenticate(data):
-		for entry in data:
+	player_number = json.loads(request.form['data'])['playerNum']
+	data = json.loads(
+		decrypt(
+			bytes(
+				json.loads(request.form['data'])['data']
+			),
+			player_number
+		)
+		)['data']
+
+	for entry in data:
+		if entry['name'] in valid_moves[player_number]:
 			game_data[entry['name']] = entry
-	return encrypt(json.dumps({'data':list(game_data.values())}))
+		else:
+			print("Attempted cheat")
+
+	return json.dumps({ 
+			'data': encrypt(
+				bytes(
+					json.dumps(
+						{'data': list(game_data.values())}
+					),
+					'utf-8'
+				),
+				player_number
+			)
+		})
 
 @app.route('/testEncryption', methods=['POST'])
 def test_encryption():
 	data = bytes(json.loads(request.form['test'])['data'])
-	print(data)
-	print(RSA_decrypter.decrypt(data))
+	print(RSA_decrypter.decrypt(data).decode('utf-8'))
+	return ""
 
 @app.route('/getExample')
 def get_example():
 	return ciphertext
+
+

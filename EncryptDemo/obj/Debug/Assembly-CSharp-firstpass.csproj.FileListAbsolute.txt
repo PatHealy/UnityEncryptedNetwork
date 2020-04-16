@@ -277,3 +277,4 @@ E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp-
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp-firstpass.csproj.CopyComplete
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp-firstpass.dll
 E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\obj\Debug\Assembly-CSharp-firstpass.pdb
+E:\Documents\School\UnityEncryptedNetwork\EncryptDemo\Temp\bin\Debug\BouncyCastle.Crypto.dll

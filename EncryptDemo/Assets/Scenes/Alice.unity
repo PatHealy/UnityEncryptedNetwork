@@ -19907,6 +19907,7 @@ MonoBehaviour:
   children:
   - {fileID: 1939835336}
   playerNum: 1
+  encryptionMode: 0
 --- !u!1001 &805878903
 PrefabInstance:
   m_ObjectHideFlags: 0
