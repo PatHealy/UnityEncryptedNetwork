@@ -181,6 +181,5 @@ def main_communicate():
 			game_data[entry['name']] = entry
 		else:
 			print("Attempted cheat")
-
-	return encrypt(json.dumps(game_data), player_number)
+	return encrypt(json.dumps({'data':list(game_data.values())}), player_number)
 
