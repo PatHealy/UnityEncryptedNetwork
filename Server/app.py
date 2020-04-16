@@ -88,10 +88,6 @@ RSA_cipher = PKCS1_OAEP.new(RSA_key_pair)
 
 key_AES = b'AAAAAAAAAAAAAAAA'
 iv_aes = Random.new().read(16)
-#aes_cipher = AES.new(key_AES, AES.MODE_CBC, iv_aes)
-#msg = cipher.encrypt(pad(b'Attack at dawn', 16))
-#cipher2 = AES.new(key_AES, AES.MODE_CBC, iv_aes)
-#print(unpad(cipher2.decrypt(msg), 16).decode('utf-8'))
 
 key_DES = b'AAAAAAAA'
 iv_des = Random.new().read(DES.block_size)
@@ -141,7 +137,8 @@ def encrypt(plaintext, playerNum):
 	method = players[playerNum]['method']
 
 	if method == "AES":
-		return plaintext
+		encrypted = list(players[playerNum]['cipher'].encrypt(pad(bytes(plaintext, 'utf-8'), 16)))
+		return {'datas': [{'data': encrypted}]}
 	elif method == "DES":
 		return plaintext
 	elif method == "DES3":
@@ -151,13 +148,16 @@ def encrypt(plaintext, playerNum):
 	elif method == "RSA":
 		return RSA_encrypt(plaintext, players[playerNum]['RSA'])
 	else:
-		return plaintext
+		encrypted = list(bytes(plaintext, 'utf-8'))
+		return {'datas': [{'data': encrypted}]}
 
 def decrypt(ciphertext, playerNum):
 	method = players[playerNum]['method']
+	data = ciphertext['datas'][0]['data']
 
 	if method == "AES":
-		return ciphertext
+		decrypted = unpad(players[playerNum]['cipher'].decrypt(bytes(data)), 16).decode('utf-8')
+		return decrypted
 	elif method == "DES":
 		return ciphertext
 	elif method == "DES3":
@@ -167,7 +167,7 @@ def decrypt(ciphertext, playerNum):
 	elif method == "RSA":
 		return RSA_decrypt(ciphertext)
 	else:
-		return ciphertext
+		return bytes(data).decode('utf-8')
 
 def RSA_encrypt(plaintext, cipher):
 	chunked = chunk_string(plaintext, CHUNK_SIZE)
@@ -206,17 +206,16 @@ def get_private_keys():
 	player_dict['RSA'] = PKCS1_OAEP.new(RSA.construct((playerN, playerE)))
 
 	if playerMethod == 'AES':
-		player['out_cipher'] = AES.new(key_AES, AES.MODE_CBC, iv_aes)
-		player['in_cipher'] = AES.new(key_AES, AES.MODE_CBC, iv_aes)
+		player_dict['cipher'] = AES.new(key_AES, AES.MODE_ECB)
 	elif playerMethod == 'DES':
-		player['out_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
-		player['in_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
+		player_dict['out_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
+		player_dict['in_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
 	elif playerMethod == 'DES3':
-		player['out_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
-		player['in_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+		player_dict['out_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
+		player_dict['in_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
 	elif playerMethod == 'Blowfish':
-		player['out_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
-		player['in_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
+		player_dict['out_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
+		player_dict['in_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
 
 	players[playerNum] = player_dict
 
@@ -228,7 +227,7 @@ def get_private_keys():
 def establish_connection():
 	if request.form['PlayerID'] not in clients:
 		clients.append(request.form['PlayerID'])
-	if len(clients) > 1:
+	if len(clients) > 0:
 		return 'go'
 	return 'wait'
 

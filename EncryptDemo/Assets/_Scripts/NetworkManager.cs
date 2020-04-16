@@ -12,7 +12,7 @@ using System.Security.Cryptography;
 using Newtonsoft.Json;
 
 public class NetworkManager : MonoBehaviour {
-    public string encryptionMethod = "RSA";
+    string encryptionMethod = "None";
     public GameObject[] parents;
     public GameObject[] children;
 
@@ -26,7 +26,9 @@ public class NetworkManager : MonoBehaviour {
     RSACryptoServiceProvider clientRSA; //Decrypts based on client private key
     RSACryptoServiceProvider serverRSA; //Encrypts based on server public key
     RSAKeySet clientPublicKeys;
-    PrivateKey privateKeys;
+
+    PrivateKey incomingPrivateKeys;
+    PrivateKey outgoingPrivateKeys;
 
     int RSAChunkSize = 128;
 
@@ -108,20 +110,20 @@ public class NetworkManager : MonoBehaviour {
                 Debug.Log("Connection failed");
             } else {
                 string decryptedString = RSADecrypt(JsonUtility.FromJson<ChunkedEncryptedData>(webRequest.downloadHandler.text), clientRSA);
-                Debug.Log(decryptedString);
-                privateKeys = JsonUtility.FromJson<PrivateKey>(decryptedString);
+                incomingPrivateKeys = JsonUtility.FromJson<PrivateKey>(decryptedString);
+                outgoingPrivateKeys = incomingPrivateKeys;
             }
         }
 
-        StartCoroutine(Exchange());
+        //StartCoroutine(Exchange());
 
         //Process response, which includes set of keys for ciphers (i.e. create those ciphers)
         //TODO
 
         //Wait for all players to connect
-        /*WWWForm form = new WWWForm();
+        WWWForm form = new WWWForm();
         form.AddField("PlayerID", playerNum);
-
+        
         while (!started) {
             using (UnityWebRequest webRequest = UnityWebRequest.Post(establishConnectionURL, form)) {
             
@@ -133,11 +135,10 @@ public class NetworkManager : MonoBehaviour {
                     if (webRequest.downloadHandler.text == "go") {
                         started = true;
                     }
-                    Debug.Log(webRequest.downloadHandler.text);
                 }
             }
-        }*/
-
+        }
+        //started = false;
     }
 
     ToSendData Encrypt(string plaintext) {
@@ -151,8 +152,10 @@ public class NetworkManager : MonoBehaviour {
         switch (encryptionMethod) {
             case "RSA":
                 toSend.datas = RSAEncrypt(plaintext, serverRSA).datas;
+                return toSend;
                 break;
             case "AES":
+                d.data = AESEncryptStringToBytes(plaintext, outgoingPrivateKeys.key, outgoingPrivateKeys.iv);
                 toSend.datas.Add(d);
                 break;
             case "DES":
@@ -166,33 +169,38 @@ public class NetworkManager : MonoBehaviour {
                 break;
             default:
                 toSend.datas.Add(d);
+                return toSend;
                 break;
         }
+
+        //outgoingPrivateKeys.iv = toSend.datas[0].data;
         return toSend;
     }
 
     string Decrypt(ChunkedEncryptedData ciphertext) {
+        string decrypted;
         switch (encryptionMethod) {
             case "RSA":
                 return RSADecrypt(ciphertext, clientRSA);
                 break;
             case "AES":
-                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+                decrypted = AESDecryptStringFromBytes(ciphertext.datas[0].data, incomingPrivateKeys.key, incomingPrivateKeys.iv);
                 break;
             case "DES":
-                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+                decrypted = Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             case "DES3":
-                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+                decrypted = Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             case "Blowfish":
-                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+                decrypted = Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
             default:
-                return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+                decrypted = Encoding.UTF8.GetString(ciphertext.datas[0].data);
                 break;
         }
-        return Encoding.UTF8.GetString(ciphertext.datas[0].data);
+        //incomingPrivateKeys.iv = ciphertext.datas[0].data;
+        return decrypted;
     }
 
     string[] Chunk(string plaintext, int chunkSize) {
@@ -237,6 +245,101 @@ public class NetworkManager : MonoBehaviour {
 
         return UnChunk(chunked);
     }
+
+
+
+    static byte[] AESEncryptStringToBytes(string plainText, byte[] Key, byte[] IV) {
+        // Check arguments. 
+        if (plainText == null || plainText.Length <= 0)
+            throw new ArgumentNullException("plainText");
+        if (Key == null || Key.Length <= 0)
+            throw new ArgumentNullException("Key");
+        if (IV == null || IV.Length <= 0)
+            throw new ArgumentNullException("IV");
+        byte[] encrypted;
+        // Create an RijndaelManaged object 
+        // with the specified key and IV. 
+        using (AesManaged aes = new AesManaged()) {
+            aes.Key = Key;
+            aes.IV = new byte[IV.Length];
+            aes.Padding = PaddingMode.PKCS7;
+            aes.BlockSize = 128;
+            aes.Mode = CipherMode.ECB;
+
+            // Create a decryptor to perform the stream transform.
+            ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+
+            // Create the streams used for encryption. 
+            using (MemoryStream msEncrypt = new MemoryStream()) {
+                using (CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write)) {
+                    using (StreamWriter swEncrypt = new StreamWriter(csEncrypt)) {
+
+                        //Write all data to the stream.
+                        swEncrypt.Write(plainText);
+                    }
+                    encrypted = msEncrypt.ToArray();
+                }
+            }
+        }
+
+
+        // Return the encrypted bytes from the memory stream. 
+        return encrypted;
+
+    }
+
+    static void PrintByteArray(byte[] bytes) {
+        var sb = new StringBuilder("byte[] = ");
+
+        foreach (var b in bytes)
+            sb.Append(b + ", ");
+
+        Debug.Log(sb.ToString());
+    }
+
+    static string AESDecryptStringFromBytes(byte[] cipherText, byte[] Key, byte[] IV) {
+        // Check arguments. 
+        if (cipherText == null || cipherText.Length <= 0)
+            throw new ArgumentNullException("cipherText");
+        if (Key == null || Key.Length <= 0)
+            throw new ArgumentNullException("Key");
+        if (IV == null || IV.Length <= 0)
+            throw new ArgumentNullException("IV");
+
+        // Declare the string used to hold 
+        // the decrypted text. 
+        string plaintext = null;
+
+        // Create an RijndaelManaged object 
+        // with the specified key and IV. 
+        using (AesManaged aes = new AesManaged()) {
+            aes.Key = Key;
+            aes.IV = new byte[IV.Length];
+            aes.Padding = PaddingMode.PKCS7;
+            aes.BlockSize = 128;
+            aes.Mode = CipherMode.ECB;
+
+            // Create a decrytor to perform the stream transform.
+            ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+
+            // Create the streams used for decryption. 
+            using (MemoryStream msDecrypt = new MemoryStream(cipherText)) {
+                using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read)) {
+                    using (StreamReader srDecrypt = new StreamReader(csDecrypt)) {
+
+                        // Read the decrypted bytes from the decrypting stream 
+                        // and place them in a string.
+                        plaintext = srDecrypt.ReadToEnd();
+                    }
+                }
+            }
+
+        }
+
+        return plaintext;
+
+    }
+
 
     IEnumerator Exchange() {
 
