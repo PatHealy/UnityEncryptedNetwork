@@ -2,7 +2,7 @@ from flask import Flask, request, session, url_for, redirect, abort, g, flash, _
 import json
 from base64 import b64encode
 # PyCrypto package
-from Crypto.Cipher import AES, DES, DES3, Blowfish, PKCS1_OAEP
+from Crypto.Cipher import AES, DES, DES3, PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto import Random
 from Crypto.Util.py3compat import *
@@ -69,61 +69,6 @@ RSA_key_data['e'] = list(RSA_key_pair.e.to_bytes(bytes_needed(RSA_key_pair.e), '
 
 RSA_cipher = PKCS1_OAEP.new(RSA_key_pair)
 
-#RSA_large_pair = RSA.generate(8192)
-#RSA_large_key_data = {}
-#RSA_large_key_data['n'] = list(RSA_large_pair.n.to_bytes(bytes_needed(RSA_large_pair.n), 'big'))
-#RSA_large_key_data['e'] = list(RSA_large_pair.e.to_bytes(bytes_needed(RSA_large_pair.e), 'big'))
-
-#RSA_large_cipher = PKCS1_OAEP.new(RSA_large_pair)
-
-#message = b64encode(b'Test message')
-#cipher = PKCS1_OAEP.new(RSA_key_pair)
-#ciphertext = RSA_decrypter.encrypt(message)
-#print(ciphertext)
-#plain = cipher.decrypt(ciphertext)
-
-#print(message)
-#print(ciphertext)
-#print(plain)
-
-key_AES = b'AAAAAAAAAAAAAAAA'
-iv_aes = Random.new().read(16)
-
-key_DES = b'AAAAAAAA'
-iv_des = Random.new().read(DES.block_size)
-#des_cipher = DES.new(key_DES, DES.MODE_CBC, iv_des)
-#plaintext = pad(b'sona si latine loqueris', 16)
-#msg = des_cipher.encrypt(plaintext)
-#cipher2 = DES.new(key_DES, DES.MODE_CBC, iv_des)
-#print(unpad(cipher2.decrypt(msg),16))
-
-key_DES3 = b'AAAAAAAAAAAAAAAA'
-iv_des3 = Random.new().read(DES3.block_size)
-#des3_cipher = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
-#plaintext = pad(b'sona si latine loqueris', 16)
-#msg = des3_cipher.encrypt(plaintext)
-#cipher2 = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
-#print(unpad(cipher2.decrypt(msg),16))
-
-key_blowfish = b'An arbitrarily long key'
-iv_blowfish = Random.new().read(Blowfish.block_size)
-#blowfish_cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv)
-#plaintext = b'docendo discimus '
-#msg = cipher.encrypt(pad(plaintext, 8))
-#cipher2 = Blowfish.new(key, Blowfish.MODE_CBC, iv)
-#plain = unpad(cipher2.decrypt(msg), 8)
-#print(plain)
-
-
-private_keys = {
-	'AES': {'key': list(key_AES), 'iv': list(iv_aes)},
-	'DES': {'key': list(key_DES), 'iv': list(iv_des)},
-	'DES3': {'key': list(key_DES3), 'iv': list(iv_des3)},
-	'Blowfish': {'key': list(key_blowfish), 'iv': list(iv_blowfish)},
-	'None': {'key': list(b'na'), 'iv': list(b'na')},
-	'RSA': {'key': list(b'na'), 'iv': list(b'na')}
-}
-
 def chunk_string(plaintext, chunk_size):
 	return [plaintext[i:i+chunk_size] for i in range(0, len(plaintext), chunk_size)]
 
@@ -135,16 +80,12 @@ def unchunk(chunks):
 
 def encrypt(plaintext, playerNum):
 	method = players[playerNum]['method']
-
 	if method == "AES":
 		encrypted = list(players[playerNum]['cipher'].encrypt(pad(bytes(plaintext, 'utf-8'), 16)))
 		return {'datas': [{'data': encrypted}]}
-	elif method == "DES":
-		return plaintext
-	elif method == "DES3":
-		return plaintext
-	elif method == "Blowfish":
-		return plaintext
+	elif method == "DES"  or method == "DES3":
+		encrypted = list(players[playerNum]['cipher'].encrypt(pad(bytes(plaintext, 'utf-8'), 8)))
+		return {'datas': [{'data': encrypted}]}
 	elif method == "RSA":
 		return RSA_encrypt(plaintext, players[playerNum]['RSA'])
 	else:
@@ -158,12 +99,9 @@ def decrypt(ciphertext, playerNum):
 	if method == "AES":
 		decrypted = unpad(players[playerNum]['cipher'].decrypt(bytes(data)), 16).decode('utf-8')
 		return decrypted
-	elif method == "DES":
-		return ciphertext
-	elif method == "DES3":
-		return ciphertext
-	elif method == "Blowfish":
-		return ciphertext
+	elif method == "DES" or method == "DES3":
+		decrypted = unpad(players[playerNum]['cipher'].decrypt(bytes(data)), 8).decode('utf-8')
+		return decrypted
 	elif method == "RSA":
 		return RSA_decrypt(ciphertext)
 	else:
@@ -205,21 +143,22 @@ def get_private_keys():
 	player_dict['method'] = playerMethod
 	player_dict['RSA'] = PKCS1_OAEP.new(RSA.construct((playerN, playerE)))
 
+	key = Random.new().read(16)
+	iv = Random.new().read(16)
+
 	if playerMethod == 'AES':
-		player_dict['cipher'] = AES.new(key_AES, AES.MODE_ECB)
+		player_dict['cipher'] = AES.new(key, AES.MODE_ECB)
 	elif playerMethod == 'DES':
-		player_dict['out_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
-		player_dict['in_cipher'] = DES.new(key_DES, DES.MODE_CBC, iv_des)
+		key = Random.new().read(8)
+		iv = Random.new().read(8)
+		player_dict['cipher'] = DES.new(key, DES.MODE_ECB)
 	elif playerMethod == 'DES3':
-		player_dict['out_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
-		player_dict['in_cipher'] = DES3.new(key_DES3, DES3.MODE_CBC, iv_des3)
-	elif playerMethod == 'Blowfish':
-		player_dict['out_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
-		player_dict['in_cipher'] = Blowfish.new(key_blowfish, Blowfish.MODE_CBC, iv_blowfish)
+		iv = Random.new().read(8)
+		player_dict['cipher'] = DES3.new(key, DES3.MODE_ECB)
 
 	players[playerNum] = player_dict
 
-	encrypted_message = RSA_encrypt(json.dumps(private_keys[playerMethod]), players[playerNum]['RSA'])
+	encrypted_message = RSA_encrypt(json.dumps({'key': list(key), 'iv': list(iv)}), players[playerNum]['RSA'])
 
 	return json.dumps(encrypted_message)
 
@@ -244,15 +183,4 @@ def main_communicate():
 			print("Attempted cheat")
 
 	return encrypt(json.dumps(game_data), player_number)
-
-@app.route('/testEncryption', methods=['POST'])
-def test_encryption():
-	data = bytes(json.loads(request.form['test'])['data'])
-	print(RSA_decrypter.decrypt(data).decode('utf-8'))
-	return ""
-
-@app.route('/getExample')
-def get_example():
-	return ciphertext
-
 
